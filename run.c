@@ -36,6 +36,10 @@ int run() {
   }
 
   if (pid == 0) {
+    if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
+      perror("mount");
+      return 1;
+    }
     char *rd = concat(dir, "/root");
     char *ud = concat(dir, "/storage");
     char *wd = concat(dir, "/work");
@@ -95,6 +99,30 @@ int run() {
     char *sys = concat(rd, "/sys");
     if (mount("/sys", sys, NULL, MS_BIND, NULL) < 0) {
       perror("mount /sys");
+      return 1;
+    }
+    if (chdir(rd) < 0) {
+      perror("chdir");
+      return 1;
+    }
+    if (mkdir(".orig", 0700) < 0) {
+      perror("mkdir");
+      return 1;
+    }
+    if (syscall(__NR_pivot_root, ".", ".orig") < 0) {
+      perror("pivot_root");
+      return 1;
+    }
+    if (mount(NULL, "/.orig", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
+      perror("mount");
+      return 1;
+    }
+    if (umount2("/.orig", MNT_DETACH) < 0) {
+      perror("umount2");
+      return 1;
+    }
+    if (chroot(".") < 0) {
+      perror("chroot");
       return 1;
     }
 
