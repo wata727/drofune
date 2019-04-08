@@ -10,6 +10,8 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <errno.h>
 
 char* concat(const char *s1, const char *s2) {
   char *ret = malloc(strlen(s1) + strlen(s2) + 1);
@@ -22,6 +24,57 @@ char* concat(const char *s1, const char *s2) {
   return ret;
 }
 
+int rm_r(const char *path) {
+  DIR *d = opendir(path);
+  size_t path_len = strlen(path);
+  if (d == NULL) {
+    perror("opendir");
+    return -1;
+  }
+
+  struct dirent *dir;
+  errno = 0;
+  while ((dir = readdir(d)) != NULL) {
+    if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..")) {
+      continue;
+    }
+    size_t len = path_len + strlen(dir->d_name) + 2;
+    char *buf = malloc(len);
+    if (buf == NULL) {
+      perror("malloc");
+      return -1;
+    }
+    struct stat statbuf;
+    snprintf(buf, len, "%s/%s", path, dir->d_name);
+    if (!stat(buf, &statbuf)){
+      if (S_ISDIR(statbuf.st_mode)) {
+        if (rm_r(buf) < 0) {
+          return -1;
+        }
+      } else {
+        if (unlink(buf) < 0) {
+          perror("unlink");
+          return -1;
+        }
+      }
+    }
+    free(buf);
+  }
+  if (errno) {
+    perror("readdir");
+    return -1;
+  }
+  if (closedir(d) < 0) {
+    perror("closedir");
+    return -1;
+  }
+  if (rmdir(path) < 0) {
+    perror("rmdir");
+    return -1;
+  }
+  return 0;
+}
+
 int run() {
   char template[] = "/tmp/insec-XXXXXX";
   char *dir = mkdtemp(template);
@@ -29,9 +82,6 @@ int run() {
     perror("mkdtemp");
     return 1;
   }
-  char *rd = concat(dir, "/root");
-  char *ud = concat(dir, "/storage");
-  char *wd = concat(dir, "/work");
 
   pid_t pid = (int)syscall(__NR_clone, CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, NULL);
   if (pid < 0) {
@@ -40,6 +90,9 @@ int run() {
   }
 
   if (pid == 0) {
+    char *rd = concat(dir, "/root");
+    char *ud = concat(dir, "/storage");
+    char *wd = concat(dir, "/work");
     if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
       perror("mount");
       return 1;
@@ -141,30 +194,7 @@ int run() {
     perror("waitpid");
     return 1;
   }
-  if (rmdir(rd) < 0) {
-    perror("rmdir");
-    return 1;
-  }
-  char *orig = concat(ud, "/.orig");
-  if (rmdir(orig) < 0) {
-    perror("rmdir");
-    return 1;
-  }
-  if (rmdir(ud) < 0) {
-    perror("rmdir");
-    return 1;
-  }
-  char *work = concat(wd, "/work");
-  if (rmdir(work) < 0) {
-    perror("rmdir");
-    return 1;
-  }
-  if (rmdir(wd) < 0) {
-    perror("rmdir");
-    return 1;
-  }
-  if (rmdir(dir) < 0) {
-    perror("rmdir");
+  if (rm_r(dir) < 0) {
     return 1;
   }
   if (WIFEXITED(status)) {
