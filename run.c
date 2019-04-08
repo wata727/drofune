@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <fcntl.h>
 
@@ -28,6 +29,9 @@ int run() {
     perror("mkdtemp");
     return 1;
   }
+  char *rd = concat(dir, "/root");
+  char *ud = concat(dir, "/storage");
+  char *wd = concat(dir, "/work");
 
   pid_t pid = (int)syscall(__NR_clone, CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, NULL);
   if (pid < 0) {
@@ -40,9 +44,6 @@ int run() {
       perror("mount");
       return 1;
     }
-    char *rd = concat(dir, "/root");
-    char *ud = concat(dir, "/storage");
-    char *wd = concat(dir, "/work");
     if (mkdir(rd, 0700) < 0) {
       perror("mkdir");
       return 1;
@@ -126,13 +127,48 @@ int run() {
       return 1;
     }
 
-    char *argv[16];
+    char *const argv[] = {
+      "/bin/bash",
+      NULL,
+    };
 
-    argv[0] = "/bin/bash";
     execv(argv[0], argv);
     return 0;
   }
 
-  sleep(5);
-  return 0;
+  int status;
+  if (waitpid(pid, &status, 0) < 0) {
+    perror("waitpid");
+    return 1;
+  }
+  if (rmdir(rd) < 0) {
+    perror("rmdir");
+    return 1;
+  }
+  char *orig = concat(ud, "/.orig");
+  if (rmdir(orig) < 0) {
+    perror("rmdir");
+    return 1;
+  }
+  if (rmdir(ud) < 0) {
+    perror("rmdir");
+    return 1;
+  }
+  char *work = concat(wd, "/work");
+  if (rmdir(work) < 0) {
+    perror("rmdir");
+    return 1;
+  }
+  if (rmdir(wd) < 0) {
+    perror("rmdir");
+    return 1;
+  }
+  if (rmdir(dir) < 0) {
+    perror("rmdir");
+    return 1;
+  }
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  }
+  return 1;
 }
