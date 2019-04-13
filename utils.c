@@ -10,7 +10,7 @@ char* concat(const char *s1, const char *s2) {
   char *ret = malloc(strlen(s1) + strlen(s2) + 1);
   if (ret == NULL) {
     perror("malloc");
-    exit(1);
+    return NULL;
   }
   strcpy(ret, s1);
   strcat(ret, s2);
