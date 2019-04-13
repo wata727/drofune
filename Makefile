@@ -1,1 +1,1 @@
-insec: insec.c run.c
+insec: insec.c run.c utils.c
