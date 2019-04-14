@@ -13,7 +13,7 @@
 #include "utils.h"
 
 // Create a new process in new namespaces.
-// This separates only mount, UTS, IPC and PID, except network, cgroup, user namespaces.
+// This isolates only mount, UTS, IPC and PID, except network, cgroup, user namespaces.
 int syscall_clone(void) {
   int pid = (int)syscall(__NR_clone, CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, NULL);
   if (pid < 0) {
@@ -63,9 +63,11 @@ char* mount_rootfs(char* dir) {
   return rd;
 }
 
-// TODO: pseudo devtmpfs
 int mount_devtmpfs(char *dir) {
   char *dev = concat(dir, "/dev");
+  if (dev == NULL)
+    return -1;
+
   if (mount("devtmpfs", dev, "devtmpfs", MS_MGC_VAL, "") < 0) {
     perror("mount devtmpfs");
     return -1;
@@ -73,38 +75,45 @@ int mount_devtmpfs(char *dir) {
   return 0;
 }
 
-// TODO: comments
+// Mount the host's procfs to the passed directory as read-only.
 int mount_procfs(char *dir) {
+  char *proc = concat(dir, "/proc");
+  char *proc_sys = concat(dir, "/proc/sys");
+  char *proc_sysrq_trigger = concat(dir, "/proc/sysrq-trigger");
+  char *proc_irq = concat(dir, "/proc/irq");
+  char *proc_bus = concat(dir, "/proc/bus");
+  char *sys = concat(dir, "/sys");
+  if (proc == NULL || proc_sys == NULL || proc_sysrq_trigger == NULL || proc_irq == NULL || proc_bus == NULL || sys == NULL)
+    return -1;
+
+  // Mount the host's procfs read-only in order not to be written via bind mounted directory.
+  // The current mount point is isolated and private, so there is no impact on the host.
   if (mount("proc", "/proc", "proc", MS_MGC_VAL, "ro,nosuid,nodev,noexec") < 0) {
     perror("mount /proc ro");
     return -1;
   }
-  char *proc = concat(dir, "/proc");
+  // Mount a new procfs to the new rootfs.
   if (mount("proc", proc, "proc", MS_MGC_VAL, "rw,nosuid,nodev,noexec,relatime") < 0) {
     perror("mount /proc rw");
     return -1;
   }
-  char *proc_sys = concat(dir, "/proc/sys");
+  // Bind mount the host's some procfs and sysfs to the new rootfs.
   if (mount("/proc/sys", proc_sys, NULL, MS_BIND, NULL) < 0) {
     perror("mount /proc/sys");
     return -1;
   }
-  char *proc_sysrq_trigger = concat(dir, "/proc/sysrq-trigger");
   if (mount("/proc/sysrq-trigger", proc_sysrq_trigger, NULL, MS_BIND, NULL) < 0) {
     perror("mount /proc/sysrq-trigger");
     return -1;
   }
-  char *proc_irq = concat(dir, "/proc/irq");
   if (mount("/proc/irq", proc_irq, NULL, MS_BIND, NULL) < 0) {
     perror("mount /proc/irq");
     return -1;
   }
-  char *proc_bus = concat(dir, "/proc/bus");
   if (mount("/proc/bus", proc_bus, NULL, MS_BIND, NULL) < 0) {
     perror("mount /proc/bus");
     return -1;
   }
-  char *sys = concat(dir, "/sys");
   if (mount("/sys", sys, NULL, MS_BIND, NULL) < 0) {
     perror("mount /sys");
     return -1;
@@ -112,37 +121,40 @@ int mount_procfs(char *dir) {
   return 0;
 }
 
-// TODO: comments
 int change_rootfs(char *dir) {
   if (chdir(dir) < 0) {
     perror("chdir pivot_root");
-    return 1;
+    return -1;
   }
   if (mkdir(".orig", 0700) < 0) {
     perror("mkdir pivot_root");
-    return 1;
+    return -1;
   }
   if (syscall(__NR_pivot_root, ".", ".orig") < 0) {
     perror("pivot_root");
-    return 1;
+    return -1;
   }
+  // Mount the put_old directory private.
   if (mount(NULL, "/.orig", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
     perror("mount pivot_root");
-    return 1;
+    return -1;
   }
+  // Perform a lazy unmount the put_old directory.
+  // This will completely hide the host's filesystem from the new root directory.
   if (umount2("/.orig", MNT_DETACH) < 0) {
     perror("umount2 pivot_root");
-    return 1;
+    return -1;
   }
+  // chroot(2) changes the running executable, which is necessary for the old root directory should be unmounted.
   if (chroot(".") < 0) {
     perror("chroot");
-    return 1;
+    return -1;
   }
   return 0;
 }
 
 int init_process(char* dir) {
-  // Although the mount point is separated, the file system still points to the host.
+  // Although the mount point is isolated, the filesystem still points to the host.
   // As a first step, make the mount point private in order to not propagate mount events.
   if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
     perror("mount private");
@@ -154,7 +166,7 @@ int init_process(char* dir) {
   if (rd == NULL)
     return 1;
 
-  // Mount a new /dev directory. TODO: why?
+  // Mount a new /dev directory.
   if (mount_devtmpfs(rd) < 0)
     return 1;
 
@@ -162,10 +174,8 @@ int init_process(char* dir) {
   if (mount_procfs(rd) < 0)
     return 1;
 
-  // TODO: Mount as new /tmp directory
-
   // Change the current rootfs of the process.
-  // After that, the host's file system cannot be seen from this process.
+  // After that, the host's filesystem cannot be seen from this process.
   if (change_rootfs(rd) < 0)
     return 1;
 
