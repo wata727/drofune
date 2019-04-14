@@ -14,7 +14,7 @@
 
 // Create a new process in new namespaces.
 // This isolates only mount, UTS, IPC and PID, except network, cgroup, user namespaces.
-int syscall_clone(void) {
+static int syscall_clone(void) {
   int pid = (int)syscall(__NR_clone, CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, NULL);
   if (pid < 0) {
     perror("clone");
@@ -25,7 +25,7 @@ int syscall_clone(void) {
 
 // Mount the host's root directory as rootfs.
 // Use overlayfs to not propagate changes inside the container to the host.
-char* mount_rootfs(char* dir) {
+static char* mount_rootfs(char* dir) {
   // Container's root directory
   char *rd = concat(dir, "/root");
   // Upper layer directory of overlayfs
@@ -63,7 +63,7 @@ char* mount_rootfs(char* dir) {
   return rd;
 }
 
-int mount_devtmpfs(char *dir) {
+static int mount_devtmpfs(char *dir) {
   char *dev = concat(dir, "/dev");
   if (dev == NULL)
     return -1;
@@ -76,7 +76,7 @@ int mount_devtmpfs(char *dir) {
 }
 
 // Mount the host's procfs to the passed directory as read-only.
-int mount_procfs(char *dir) {
+static int mount_procfs(char *dir) {
   char *proc = concat(dir, "/proc");
   char *proc_sys = concat(dir, "/proc/sys");
   char *proc_sysrq_trigger = concat(dir, "/proc/sysrq-trigger");
@@ -121,7 +121,7 @@ int mount_procfs(char *dir) {
   return 0;
 }
 
-int change_rootfs(char *dir) {
+static int change_rootfs(char *dir) {
   if (chdir(dir) < 0) {
     perror("chdir pivot_root");
     return -1;
@@ -153,7 +153,7 @@ int change_rootfs(char *dir) {
   return 0;
 }
 
-int init_process(char* dir) {
+static int init_process(char* dir) {
   // Although the mount point is isolated, the filesystem still points to the host.
   // As a first step, make the mount point private in order to not propagate mount events.
   if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
