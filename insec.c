@@ -14,14 +14,14 @@ static struct argp_option options[] = {};
 static error_t parse_opt(int key, char *arg, struct argp_state *state) {
   switch (key) {
     case ARGP_KEY_NO_ARGS:
-      fprintf(stderr, "%s: must have command\n", self);
+      fprintf(stderr, "%s: must have commands\n", self);
       exit(1);
     default:
       return ARGP_ERR_UNKNOWN;
   }
 }
 
-static char args_doc[] = "COMMAND [OPTION...]";
+static char args_doc[] = "COMMAND";
 
 static char doc[] =                                     \
   "\nCOMMANDS:\n"                                       \
@@ -31,15 +31,31 @@ static char doc[] =                                     \
 
 static struct argp argp = { options, parse_opt, args_doc, doc };
 
-int main(const int argc, char **argv) {
+int main(int argc, char **argv) {
   self = argv[0];
-  int cmd_idx;
+  argc--; argv++;
+  if (argc < 1) {
+    fprintf(stderr, "%s: must have command\n", self);
+    return 1;
+  }
+  const char *command = argv[0];
 
-  argp_parse(&argp, argc, argv, ARGP_IN_ORDER, &cmd_idx, &context);
-
-  const char *command = argv[cmd_idx];
   if (strcmp(command, "run") == 0) {
-    return run();
+    int cmd_idx;
+    argp_parse(&argp, argc, argv, ARGP_IN_ORDER, &cmd_idx, &context);
+
+    char **commands = (char**)malloc(sizeof(char*) * (argc - cmd_idx));
+    char *arg;
+    int i;
+
+    for (i = 0; i < argc - cmd_idx; i++) {
+      arg = argv[cmd_idx + i];
+      commands[i] = malloc(strlen(arg));
+      strcpy(commands[i], arg);
+    }
+    commands[i] = NULL;
+
+    return run(commands);
   } else if (strcmp(command, "exec") == 0) {
     return 0;
   }

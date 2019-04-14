@@ -153,7 +153,7 @@ static int change_rootfs(char *dir) {
   return 0;
 }
 
-static int init_process(char* dir) {
+static int init_process(char* dir, char** commands) {
   // Although the mount point is isolated, the filesystem still points to the host.
   // As a first step, make the mount point private in order to not propagate mount events.
   if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
@@ -179,15 +179,11 @@ static int init_process(char* dir) {
   if (change_rootfs(rd) < 0)
     return 1;
 
-  char *const argv[] = {
-    "/bin/bash",
-    NULL,
-  };
-  execv(argv[0], argv);
+  execv(commands[0], commands);
   return 0;
 }
 
-int run(void) {
+int run(char **commands) {
   // Make a temporary directory as a working directory.
   // All processes in the container run on this directory.
   char template[] = "/tmp/insec-XXXXXX";
@@ -206,7 +202,7 @@ int run(void) {
   // syscall_clone() behaves like fork(2).
   // If the pid is zero, the process has run in new namespaces.
   if (pid == 0)
-    return init_process(dir);
+    return init_process(dir, commands);
 
   // Here is the parent process.
   // Wait for the init process to exit.
