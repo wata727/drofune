@@ -3,6 +3,7 @@
 #include <string.h>
 #include <argp.h>
 #include "run.h"
+#include "exec.h"
 
 const char *self;
 
@@ -57,7 +58,21 @@ int main(int argc, char **argv) {
 
     return run(commands);
   } else if (strcmp(command, "exec") == 0) {
-    return 0;
+    int cmd_idx;
+    argp_parse(&argp, argc, argv, ARGP_IN_ORDER, &cmd_idx, &context);
+
+    char **commands = (char**)malloc(sizeof(char*) * (argc - cmd_idx));
+    char *arg;
+    int i;
+
+    for (i = 0; i < argc - cmd_idx; i++) {
+      arg = argv[cmd_idx + i];
+      commands[i] = malloc(strlen(arg));
+      strcpy(commands[i], arg);
+    }
+    commands[i] = NULL;
+
+    return exec(commands);
   }
 
   fprintf(stderr, "%s: unknown command '%s'\n", self, command);
