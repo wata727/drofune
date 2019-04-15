@@ -13,9 +13,9 @@
 #include "utils.h"
 
 // Create a new process in new namespaces.
-// This isolates only mount, UTS, IPC and PID, except network, cgroup, user namespaces.
+// This isolates only PID, UTS, IPC and mount, except network, cgroup, user namespaces.
 static int syscall_clone(void) {
-  int pid = (int)syscall(__NR_clone, CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, NULL);
+  int pid = (int)syscall(__NR_clone, CLONE_NEWPID  | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWNS | SIGCHLD, NULL);
   if (pid < 0) {
     perror("clone");
     return pid;
@@ -60,6 +60,7 @@ static char* mount_rootfs(char* dir) {
     perror("mount overlayfs");
     return NULL;
   }
+  free(data);
   return rd;
 }
 
