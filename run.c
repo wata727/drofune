@@ -186,7 +186,7 @@ static int init_process(char* dir, char** commands) {
 int run(char **commands) {
   // Make a temporary directory as a working directory.
   // All processes in the container run on this directory.
-  char template[] = "/tmp/insec-XXXXXX";
+  char template[] = "/tmp/drofune-XXXXXX";
   char *dir = mkdtemp(template);
   if (dir == NULL) {
     perror("mkdtemp");

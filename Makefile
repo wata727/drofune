@@ -1,1 +1,1 @@
-insec: insec.c run.c exec.c utils.c
+drofune: drofune.c run.c exec.c utils.c
