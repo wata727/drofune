@@ -44,7 +44,7 @@ static int enter_namespace(char* pid, struct namespace ns) {
 
 int exec(char **commands) {
   pid_t pid;
-  char* target_pid = "10447";
+  char* target_pid = "29988";
 
   int i;
   for (i = 0; i < 4; i++) {
@@ -55,6 +55,7 @@ int exec(char **commands) {
 
     if (ns.value == CLONE_NEWPID) {
       pid = fork();
+      sleep(1);
       if (pid > 0) {
         break;
       }
