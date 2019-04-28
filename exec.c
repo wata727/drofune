@@ -13,6 +13,8 @@ struct namespace {
   int value;
 };
 
+// List of namespaces. Order is important for exploits.
+// As it joins the namespace sequentially from the top, it is easier to attack if the PID namespace is on the top.
 static struct namespace namespaces[] = {
   {"pid", CLONE_NEWPID},
   {"uts", CLONE_NEWUTS},
@@ -20,6 +22,8 @@ static struct namespace namespaces[] = {
   {"mnt", CLONE_NEWNS},
 };
 
+// Enter container's namespace.
+// Open the file descriptor referring a namespace and call setns(2).
 static int enter_namespace(char* pid, struct namespace ns) {
   int len = 10 + strlen(pid) + 3 + 1;
   char *path = malloc(len);
@@ -38,18 +42,22 @@ static int enter_namespace(char* pid, struct namespace ns) {
     perror("setns");
     return -1;
   }
+  if (close(fd) < 0) {
+    perror("close ns fd");
+    return -1;
+  }
   free(path);
   return 0;
 }
 
 int exec(char **commands) {
-  // Check if pid file already exists
+  // Check if pid file already exists.
   if (access("/var/run/drofune.pid", F_OK) != 0) {
     fprintf(stderr, "/var/run/drofune.pid: Container not running\n");
     return 1;
   }
 
-  pid_t pid;
+  // Read container process pid from pid file.
   char target_pid[16];
   FILE *fp = fopen("/var/run/drofune.pid", "r");
   if (fp == NULL) {
@@ -60,15 +68,23 @@ int exec(char **commands) {
     perror("read pid file");
     return 1;
   }
+  if (fclose(fp) == EOF) {
+    perror("close pid file");
+    return 1;
+  }
 
+  // Join container's namespaces.
   int i;
   int namespaces_count = sizeof(namespaces) / sizeof(namespaces[0]);
+  pid_t pid;
   for (i = 0; i < namespaces_count; i++) {
     struct namespace ns = namespaces[i];
     if (enter_namespace(target_pid, ns) < 0) {
       return 1;
     }
 
+    // Oh no! Certainly, you need to fork to enter the PID namespace, but you MUST NOT fork before entering all namespaces.
+    // For sleep(3), assume another long process. This is necessary for an attack vector.
     if (ns.value == CLONE_NEWPID) {
       pid = fork();
       sleep(1);
@@ -78,11 +94,14 @@ int exec(char **commands) {
     }
   }
 
+  // Exec commands in the container.
   if (pid == 0) {
     execv(commands[0], commands);
     return 0;
   }
 
+  // Here is the parent process.
+  // Wait for the process to exit.
   int status;
   if (waitpid(pid, &status, 0) < 0) {
     perror("waitpid");

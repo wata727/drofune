@@ -185,7 +185,7 @@ static int init_process(char* dir, char** commands) {
 }
 
 int run(char **commands) {
-  // Check if pid file already exists
+  // Check if pid file already exists.
   if (access("/var/run/drofune.pid", F_OK) != -1) {
     fprintf(stderr, "/var/run/drofune.pid: Container already exists\n");
     return 1;
