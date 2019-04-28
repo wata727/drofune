@@ -43,11 +43,27 @@ static int enter_namespace(char* pid, struct namespace ns) {
 }
 
 int exec(char **commands) {
+  // Check if pid file already exists
+  if (access("/var/run/drofune.pid", F_OK) != 0) {
+    fprintf(stderr, "/var/run/drofune.pid: Container not running\n");
+    return 1;
+  }
+
   pid_t pid;
-  char* target_pid = "19522";
+  char target_pid[16];
+  FILE *fp = fopen("/var/run/drofune.pid", "r");
+  if (fp == NULL) {
+    perror("open file file");
+    return 1;
+  }
+  if (fgets(target_pid, 16, fp) == NULL) {
+    perror("read pid file");
+    return 1;
+  }
 
   int i;
-  for (i = 0; i < 4; i++) {
+  int namespaces_count = sizeof(namespaces) / sizeof(namespaces[0]);
+  for (i = 0; i < namespaces_count; i++) {
     struct namespace ns = namespaces[i];
     if (enter_namespace(target_pid, ns) < 0) {
       return 1;

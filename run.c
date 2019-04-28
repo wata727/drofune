@@ -185,6 +185,12 @@ static int init_process(char* dir, char** commands) {
 }
 
 int run(char **commands) {
+  // Check if pid file already exists
+  if (access("/var/run/drofune.pid", F_OK) != -1) {
+    fprintf(stderr, "/var/run/drofune.pid: Container already exists\n");
+    return 1;
+  }
+
   // Make a temporary directory as a working directory.
   // All processes in the container run on this directory.
   char template[] = "/tmp/drofune-XXXXXX";
@@ -206,6 +212,21 @@ int run(char **commands) {
     return init_process(dir, commands);
 
   // Here is the parent process.
+  // Create and write pid file.
+  FILE *fp = fopen("/var/run/drofune.pid", "w");
+  if (fp == NULL) {
+    perror("open pid file");
+    return 1;
+  }
+  if (fprintf(fp, "%d", pid) < 0) {
+    perror("write pid file");
+    return 1;
+  }
+  if (fclose(fp) == EOF) {
+    perror("close pid file");
+    return 1;
+  }
+
   // Wait for the init process to exit.
   int status;
   if (waitpid(pid, &status, 0) < 0) {
@@ -214,6 +235,8 @@ int run(char **commands) {
   }
   // Clean up the working directory.
   if (rm_r(dir) < 0)
+    return 1;
+  if (unlink("/var/run/drofune.pid") < 0)
     return 1;
   // If the exit status is obtained, it will be returned.
   if (WIFEXITED(status)) {
