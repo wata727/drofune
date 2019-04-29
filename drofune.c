@@ -2,24 +2,34 @@
 #include <stdlib.h>
 #include <string.h>
 #include <argp.h>
+#include "drofune.h"
 #include "run.h"
 #include "exec.h"
 
 const char *self;
-
-struct context {};
 static struct context context;
 
-static struct argp_option options[] = {};
+enum {
+  OPTION_SECURE_JOIN = 1000,
+};
+
+static struct argp_option options[] = {
+  {"secure-join", OPTION_SECURE_JOIN, 0, 0, "join namespaces in a secure way"}
+};
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state) {
   switch (key) {
+    case OPTION_SECURE_JOIN:
+      context.secure_join = 1;
+      break;
     case ARGP_KEY_NO_ARGS:
       fprintf(stderr, "%s: must have commands\n", self);
       exit(1);
     default:
       return ARGP_ERR_UNKNOWN;
   }
+
+  return 0;
 }
 
 static char args_doc[] = "COMMAND";
@@ -72,7 +82,7 @@ int main(int argc, char **argv) {
     }
     commands[i] = NULL;
 
-    return exec(commands);
+    return exec(commands, context);
   }
 
   fprintf(stderr, "%s: unknown command '%s'\n", self, command);

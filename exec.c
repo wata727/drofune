@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <math.h>
+#include "drofune.h"
 
 struct namespace {
   const char *name;
@@ -50,7 +51,7 @@ static int enter_namespace(char* pid, struct namespace ns) {
   return 0;
 }
 
-int exec(char **commands) {
+int exec(char **commands, struct context ctx) {
   // Check if pid file already exists.
   if (access("/var/run/drofune.pid", F_OK) != 0) {
     fprintf(stderr, "/var/run/drofune.pid: Container not running\n");
@@ -85,13 +86,19 @@ int exec(char **commands) {
 
     // Oh no! Certainly, you need to fork to enter the PID namespace, but you MUST NOT fork before entering all namespaces.
     // For sleep(3), assume another long process. This is necessary for an attack vector.
-    if (ns.value == CLONE_NEWPID) {
+    if (ns.value == CLONE_NEWPID && !ctx.secure_join) {
       pid = fork();
       sleep(1);
       if (pid > 0) {
         break;
       }
     }
+  }
+
+  // You should fork after entering all namespaces.
+  if (ctx.secure_join) {
+    pid = fork();
+    sleep(1);
   }
 
   // Exec commands in the container.
