@@ -1,4 +1,4 @@
 drofune
-exploits/exploit
-exploits/shellcode.o
-exploits/shellcode
+exploits/*/exploit
+exploits/*/shellcode.o
+exploits/*/shellcode
