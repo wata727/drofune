@@ -6,15 +6,18 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/syscall.h>
+#include <sys/sendfile.h>
 #include <math.h>
 #include "drofune.h"
+#include "cloned_binary.h"
 
 struct namespace {
   const char *name;
   int value;
 };
 
-// List of namespaces. Order is important for exploits.
+// List of namespaces. The order is important for exploits.
 // As it joins the namespace sequentially from the top, it is easier to attack if the PID namespace is on the top.
 static struct namespace namespaces[] = {
   {"pid", CLONE_NEWPID},
@@ -52,6 +55,13 @@ static int enter_namespace(char* pid, struct namespace ns) {
 }
 
 int exec(char **commands, struct context ctx) {
+  if (ctx.clone_binary) {
+    if (ensure_cloned_binary() < 0) {
+      perror("ensure_clone_binary");
+      return 1;
+    }
+  }
+
   // Check if pid file already exists.
   if (access("/var/run/drofune.pid", F_OK) != 0) {
     fprintf(stderr, "/var/run/drofune.pid: Container not running\n");
