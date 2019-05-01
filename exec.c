@@ -6,9 +6,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
-#include <sys/syscall.h>
-#include <sys/sendfile.h>
-#include <math.h>
 #include "drofune.h"
 #include "cloned_binary.h"
 
