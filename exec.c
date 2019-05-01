@@ -55,7 +55,7 @@ static int enter_namespace(char* pid, struct namespace ns) {
 }
 
 int exec(char **commands, struct context ctx) {
-  // Oh no! At first glance, you may not understand why it needs this implementation.
+  // At first glance, you may not understand why it needs this implementation.
   // However, it allows access to the host binary from within the container through /proc/pid/exe if do not clone the binary.
   // See exploits/CVE-2019-5736
   if (ctx.clone_binary) {
@@ -97,7 +97,7 @@ int exec(char **commands, struct context ctx) {
       return 1;
     }
 
-    // Oh no! Certainly, you need to fork to enter the PID namespace, but you MUST NOT fork before entering all namespaces.
+    // Certainly, you need to fork to enter the PID namespace, but you MUST NOT fork before entering all namespaces.
     // For sleep(3), assume another long process. This is necessary for an attack vector.
     // See exploits/insecure_join
     if (ns.value == CLONE_NEWPID && !ctx.secure_join) {

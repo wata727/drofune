@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <fcntl.h>
+#include "drofune.h"
 #include "utils.h"
 
 // Create a new process in new namespaces.
@@ -122,13 +123,30 @@ static int mount_procfs(char *dir) {
   return 0;
 }
 
-static int change_rootfs(char *dir) {
+// Changes the root directory with chroot(2).
+// However, we can escape from the chroot jail with chroot(2).
+// See exploits/chroot_jailbreak
+static int chrootfs(char *dir) {
   if (chdir(dir) < 0) {
-    perror("chdir pivot_root");
+    perror("chdir chrootfs");
+    return -1;
+  }
+  if (chroot(".") < 0) {
+    perror("chroot chrootfs");
+    return -1;
+  }
+  return 0;
+}
+
+// Changes the root directory with pivot_root(2).
+// We can prevent chroot jailbreak with pivot_root(2).
+static int pivot_rootfs(char *dir) {
+  if (chdir(dir) < 0) {
+    perror("chdir pivot_rootfs");
     return -1;
   }
   if (mkdir(".orig", 0700) < 0) {
-    perror("mkdir pivot_root");
+    perror("mkdir pivot_rootfs");
     return -1;
   }
   if (syscall(__NR_pivot_root, ".", ".orig") < 0) {
@@ -137,24 +155,24 @@ static int change_rootfs(char *dir) {
   }
   // Mount the put_old directory private.
   if (mount(NULL, "/.orig", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
-    perror("mount pivot_root");
+    perror("mount pivot_rootfs");
     return -1;
   }
   // Perform a lazy unmount the put_old directory.
   // This will completely hide the host's filesystem from the new root directory.
   if (umount2("/.orig", MNT_DETACH) < 0) {
-    perror("umount2 pivot_root");
+    perror("umount2 pivot_rootfs");
     return -1;
   }
   // chroot(2) changes the running executable, which is necessary for the old root directory should be unmounted.
   if (chroot(".") < 0) {
-    perror("chroot");
+    perror("chroot pivot_rootfs");
     return -1;
   }
   return 0;
 }
 
-static int init_process(char* dir, char** commands) {
+static int init_process(char* dir, char** commands, struct context ctx) {
   // Although the mount point is isolated, the filesystem still points to the host.
   // As a first step, make the mount point private in order to not propagate mount events.
   if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
@@ -177,14 +195,19 @@ static int init_process(char* dir, char** commands) {
 
   // Change the current rootfs of the process.
   // After that, the host's filesystem cannot be seen from this process.
-  if (change_rootfs(rd) < 0)
-    return 1;
+  if (ctx.pivot_root) {
+    if (pivot_rootfs(rd) < 0)
+      return 1;
+  } else {
+    if (chrootfs(rd) < 0)
+      return 1;
+  }
 
   execv(commands[0], commands);
   return 0;
 }
 
-int run(char **commands) {
+int run(char **commands, struct context ctx) {
   // Check if pid file already exists.
   if (access("/var/run/drofune.pid", F_OK) != -1) {
     fprintf(stderr, "/var/run/drofune.pid: Container already exists\n");
@@ -209,7 +232,7 @@ int run(char **commands) {
   // syscall_clone() behaves like fork(2).
   // If the pid is zero, the process has run in new namespaces.
   if (pid == 0)
-    return init_process(dir, commands);
+    return init_process(dir, commands, ctx);
 
   // Here is the parent process.
   // Create and write pid file.
