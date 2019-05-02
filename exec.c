@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include "drofune.h"
 #include "cloned_binary.h"
+#include "drop_caps.h"
 
 struct namespace {
   const char *name;
@@ -114,6 +115,14 @@ int exec(char **commands, struct context ctx) {
 
   // Exec commands in the container.
   if (pid == 0) {
+    // Drop capabilities to prevent dangerous operations from the container.
+    if (ctx.drop_caps) {
+      if (drop_caps() < 0) {
+        perror("drop capabilities");
+        return 1;
+      }
+    }
+
     execv(commands[0], commands);
     return 0;
   }

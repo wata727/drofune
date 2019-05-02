@@ -13,12 +13,14 @@ enum {
   OPTION_SECURE_JOIN = 1000,
   OPTION_CLONE_BINARY,
   OPTION_PIVOT_ROOT,
+  OPTION_DROP_CAPS,
 };
 
 static struct argp_option options[] = {
   {"secure-join", OPTION_SECURE_JOIN, 0, 0, "fork after entering all namespaces"},
   {"clone-binary", OPTION_CLONE_BINARY, 0, 0, "run with cloned binary"},
-  {"pivot-root", OPTION_PIVOT_ROOT, 0, 0, "use pivot_root(2) instead of chroot(2)"}
+  {"pivot-root", OPTION_PIVOT_ROOT, 0, 0, "use pivot_root(2) instead of chroot(2)"},
+  {"drop-caps", OPTION_DROP_CAPS, 0, 0, "drop capabilities like Docker"},
 };
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state) {
@@ -31,6 +33,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
       break;
     case OPTION_PIVOT_ROOT:
       context.pivot_root = 1;
+      break;
+    case OPTION_DROP_CAPS:
+      context.drop_caps = 1;
       break;
     case ARGP_KEY_NO_ARGS:
       fprintf(stderr, "%s: must have commands\n", self);

@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <fcntl.h>
 #include "drofune.h"
+#include "drop_caps.h"
 #include "utils.h"
 
 // Create a new process in new namespaces.
@@ -201,6 +202,14 @@ static int init_process(char* dir, char** commands, struct context ctx) {
   } else {
     if (chrootfs(rd) < 0)
       return 1;
+  }
+
+  // Drop capabilities to prevent dangerous operations from the container.
+  if (ctx.drop_caps) {
+    if (drop_caps() < 0) {
+      perror("drop capabilities");
+      return 1;
+    }
   }
 
   execv(commands[0], commands);
