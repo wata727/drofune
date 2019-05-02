@@ -123,7 +123,10 @@ int exec(char **commands, struct context ctx) {
       }
     }
 
-    execv(commands[0], commands);
+    if (execv(commands[0], commands) < 0) {
+      perror("execv");
+      return 1;
+    }
     return 0;
   }
 
