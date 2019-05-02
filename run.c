@@ -11,8 +11,116 @@
 #include <signal.h>
 #include <fcntl.h>
 #include "drofune.h"
+#include "run.h"
 #include "drop_caps.h"
 #include "utils.h"
+
+int run(char **commands, struct context ctx) {
+  // Check if pid file already exists.
+  if (access("/var/run/drofune.pid", F_OK) != -1) {
+    fprintf(stderr, "/var/run/drofune.pid: Container already exists\n");
+    return 1;
+  }
+
+  // Make a temporary directory as a working directory.
+  // All processes in the container run on this directory.
+  char template[] = "/tmp/drofune-XXXXXX";
+  char *dir = mkdtemp(template);
+  if (dir == NULL) {
+    perror("mkdtemp");
+    return 1;
+  }
+
+  // Create a container init process.
+  // Note that the init process starts on the host.
+  pid_t pid = syscall_clone();
+  if (pid < 0)
+    return 1;
+
+  // syscall_clone() behaves like fork(2).
+  // If the pid is zero, the process has run in new namespaces.
+  if (pid == 0)
+    return init_process(dir, commands, ctx);
+
+  // Here is the parent process.
+  // Create and write pid file.
+  FILE *fp = fopen("/var/run/drofune.pid", "w");
+  if (fp == NULL) {
+    perror("open pid file");
+    return 1;
+  }
+  if (fprintf(fp, "%d", pid) < 0) {
+    perror("write pid file");
+    return 1;
+  }
+  if (fclose(fp) == EOF) {
+    perror("close pid file");
+    return 1;
+  }
+
+  // Wait for the init process to exit.
+  int status;
+  if (waitpid(pid, &status, 0) < 0) {
+    perror("waitpid");
+    return 1;
+  }
+  // Clean up the working directory.
+  if (rm_r(dir) < 0)
+    return 1;
+  if (unlink("/var/run/drofune.pid") < 0)
+    return 1;
+  // If the exit status is obtained, it will be returned.
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  }
+  return 1;
+}
+
+static int init_process(char* dir, char** commands, struct context ctx) {
+  // Although the mount point is isolated, the filesystem still points to the host.
+  // As a first step, make the mount point private in order to not propagate mount events.
+  if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
+    perror("mount private");
+    return 1;
+  }
+
+  // Mount the host's root directory on the working directory.
+  char *rd = mount_rootfs(dir);
+  if (rd == NULL)
+    return 1;
+
+  // Mount a new /dev directory.
+  if (mount_devtmpfs(rd) < 0)
+    return 1;
+
+  // Mount a new /proc directory in order to hide outside pids.
+  if (mount_procfs(rd) < 0)
+    return 1;
+
+  // Change the current rootfs of the process.
+  // After that, the host's filesystem cannot be seen from this process.
+  if (ctx.pivot_root) {
+    if (pivot_rootfs(rd) < 0)
+      return 1;
+  } else {
+    if (chrootfs(rd) < 0)
+      return 1;
+  }
+
+  // Drop capabilities to prevent dangerous operations from the container.
+  if (ctx.drop_caps) {
+    if (drop_caps() < 0) {
+      perror("drop capabilities");
+      return 1;
+    }
+  }
+
+  if (execv(commands[0], commands) < 0) {
+    perror("execv");
+    return 1;
+  }
+  return 0;
+}
 
 // Create a new process in new namespaces.
 // This isolates only PID, UTS, IPC and mount, except network, cgroup, user namespaces.
@@ -171,111 +279,4 @@ static int pivot_rootfs(char *dir) {
     return -1;
   }
   return 0;
-}
-
-static int init_process(char* dir, char** commands, struct context ctx) {
-  // Although the mount point is isolated, the filesystem still points to the host.
-  // As a first step, make the mount point private in order to not propagate mount events.
-  if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
-    perror("mount private");
-    return 1;
-  }
-
-  // Mount the host's root directory on the working directory.
-  char *rd = mount_rootfs(dir);
-  if (rd == NULL)
-    return 1;
-
-  // Mount a new /dev directory.
-  if (mount_devtmpfs(rd) < 0)
-    return 1;
-
-  // Mount a new /proc directory in order to hide outside pids.
-  if (mount_procfs(rd) < 0)
-    return 1;
-
-  // Change the current rootfs of the process.
-  // After that, the host's filesystem cannot be seen from this process.
-  if (ctx.pivot_root) {
-    if (pivot_rootfs(rd) < 0)
-      return 1;
-  } else {
-    if (chrootfs(rd) < 0)
-      return 1;
-  }
-
-  // Drop capabilities to prevent dangerous operations from the container.
-  if (ctx.drop_caps) {
-    if (drop_caps() < 0) {
-      perror("drop capabilities");
-      return 1;
-    }
-  }
-
-  if (execv(commands[0], commands) < 0) {
-    perror("execv");
-    return 1;
-  }
-  return 0;
-}
-
-int run(char **commands, struct context ctx) {
-  // Check if pid file already exists.
-  if (access("/var/run/drofune.pid", F_OK) != -1) {
-    fprintf(stderr, "/var/run/drofune.pid: Container already exists\n");
-    return 1;
-  }
-
-  // Make a temporary directory as a working directory.
-  // All processes in the container run on this directory.
-  char template[] = "/tmp/drofune-XXXXXX";
-  char *dir = mkdtemp(template);
-  if (dir == NULL) {
-    perror("mkdtemp");
-    return 1;
-  }
-
-  // Create a container init process.
-  // Note that the init process starts on the host.
-  pid_t pid = syscall_clone();
-  if (pid < 0)
-    return 1;
-
-  // syscall_clone() behaves like fork(2).
-  // If the pid is zero, the process has run in new namespaces.
-  if (pid == 0)
-    return init_process(dir, commands, ctx);
-
-  // Here is the parent process.
-  // Create and write pid file.
-  FILE *fp = fopen("/var/run/drofune.pid", "w");
-  if (fp == NULL) {
-    perror("open pid file");
-    return 1;
-  }
-  if (fprintf(fp, "%d", pid) < 0) {
-    perror("write pid file");
-    return 1;
-  }
-  if (fclose(fp) == EOF) {
-    perror("close pid file");
-    return 1;
-  }
-
-  // Wait for the init process to exit.
-  int status;
-  if (waitpid(pid, &status, 0) < 0) {
-    perror("waitpid");
-    return 1;
-  }
-  // Clean up the working directory.
-  if (rm_r(dir) < 0)
-    return 1;
-  if (unlink("/var/run/drofune.pid") < 0)
-    return 1;
-  // If the exit status is obtained, it will be returned.
-  if (WIFEXITED(status)) {
-    return WEXITSTATUS(status);
-  }
-  return 1;
 }
